@@ -7,5 +7,5 @@ En esta ocasión, presento el proyecto de investigación desarrollado por la org
 RPubs: https://rpubs.com/delacruz-renzo/analisis-espaciotemporal-humedal-huacho-hualmay-carquin
 
 <div align="center">
-<img src="Mapa.png" width="800"/>
+<img src="Mapa.png" width="700"/>
 </div>
