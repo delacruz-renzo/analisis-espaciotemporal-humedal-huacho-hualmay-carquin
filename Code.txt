@@ -1,0 +1,283 @@
+---
+title: "**Spatiotemporal Analysis of the Surface of the Huacho-Hualmay-Carquín Coastal Wetland and Its Relationship with Environmental and Anthropogenic Factors**"
+author: "By: Renzo Angel De La Cruz Gonzales"
+---
+
+GMAIL: renzoangeldelacruz@gmail.com
+GitHub: https://github.com/delacruz-renzo
+
+## Área de estudio.
+setwd("d:/Lenovo/Desktop/GEO/PROJECT_2/") # Definir directorio de trabajo.
+library(sf)
+library(leaflet)
+library(mapview)
+### Importar área de estudio ".shp".
+aoi_sf <- read_sf("vectorial/aoi.shp")
+### Graficar área de estudio.
+mapview::mapview(aoi_sf, layer.name = "Study Area", alpha.regions = 0.5,
+                 map.types = c("Esri.WorldImagery"))
+
+## Análisis NDVI
+library(rgee)
+library(reticulate)
+library(googledrive)
+library(leaflet)
+library(mapview)   
+### Inicializar Google Earth Engine dentro de RStudio.
+reticulate::use_python(python = "C:/Python3913/python.exe", required = TRUE)
+ee_Initialize(user = "renzoangeldelacruz@gmail.com", drive = TRUE)
+### Importar área de estudio.
+aoi <- ee$FeatureCollection("projects/ee-renzoangeldelacruz/assets/Hualmey")
+viz_aoi <- list(color = "red")
+Map$centerObject(aoi, zoom = 14)
+Map$addLayer(aoi, visParams = viz_aoi, name = "Study Area")
+### Generar mosaico de imágen Planet NICFI.
+collection <- ee$ImageCollection("projects/planet-nicfi/assets/basemaps/americas")$
+  filterDate("2024-01-01","2024-12-31")$
+  filterBounds(aoi)$
+  median()
+imagen <- collection$clip(aoi)
+viz_imagen <- list(bands = c("R", "G", "B"),
+                   min = 371.5,
+                   max = 2766,
+                   gamma = 1,
+                   opacity = 1)
+Map$addLayer(imagen, visParams = viz_imagen, name = "Imagen Planet 2024")
+### Cálcular NDVI.
+NDVI <- imagen$normalizedDifference(c("N","R"))
+viz_NDVI <- list(gamma = 1,
+                 opacity = 1)
+Map$addLayer(imagen, visParams = viz_imagen, name = "Imagen Planet 2024") +
+Map$addLayer(NDVI,visParams = viz_NDVI, name = "NDVI Planet 2024")
+### Reclasificar NDVI.
+nd_NDVI <- NDVI$select("nd")
+c1 <- nd_NDVI$gte(-1)$And(nd_NDVI$lt(0.1))$multiply(1)
+c2 <- nd_NDVI$gte(0.1)$And(nd_NDVI$lt(0.2))$multiply(2)
+c3 <- nd_NDVI$gte(0.2)$And(nd_NDVI$lt(0.4))$multiply(3)
+c4 <- nd_NDVI$gte(0.4)$And(nd_NDVI$lt(0.6))$multiply(4)
+c5 <- nd_NDVI$gte(0.6)$And(nd_NDVI$lt(1))$multiply(5)
+Reclass_NDVI <- c1$add(c2)$add(c3)$add(c4)$add(c5)
+vis_reclass <- list(palette = c("red","orange","yellow",
+                                "lightgreen","darkgreen"),
+                    min = 1, max = 5)
+Map$addLayer(imagen, visParams = viz_imagen, name = "Imagen Planet 2024") +
+  Map$addLayer(NDVI,visParams = viz_NDVI, name = "NDVI Planet 2024") +
+  Map$addLayer(Reclass_NDVI,visParams = vis_reclass, name = "Reclasificación NDVI 2024")
+### Convertir objeto GEE a raster.
+aoi_geom <- aoi$geometry()
+image_raster <- ee_as_stars(Reclass_NDVI, region = aoi_geom, scale = 4.7, dsn = "Reclass_NDVI_2024", via = "drive", container = "GEE")
+### Exportar imágen raster.
+writeRaster(image_raster, "raster/Reclass_NDVI_2024.tif", format = "GTiff", overwrite = TRUE)
+
+## Delimitación del humedal
+library(raster)
+library(terra)
+### Importar humedal delimitado 2024.
+humedal_2024 <- read_sf("vectorial/HumedalCarquin_2024.shp")
+st_area(humedal_2024) # Área.
+### Importar imágen satelital Planet NICFI 2024.
+planet_2024 <- stack("raster/Planet_2024.tif")
+### Gráficar superficie del humedal delimitada.
+plotRGB(planet_2024, r = 4, g = 3, b = 2, stretch = "lin")
+plot(humedal_2024, col = "NA", border = "green", lwd = 2, add = TRUE)
+
+## Dinámica espacio-temporal de la superficie del humedal.
+library(readxl)
+library(dplyr)
+library(waterfalls)
+library(ggplot2)
+### Importar datos ".xlsx".
+data <- read_excel("datos/data_Surface.xlsx")
+head(data)
+str(data)
+### Cálcular ganancias y pérdidas de superficie.
+valor_inicial <- data[[1,5]]
+valor_inicial
+cambio <- data$AREA_HA - lag(data$AREA_HA)
+print(cambio)
+cambio <- na.omit(cambio)
+cambio <- c(valor_inicial, cambio)
+print(cambio)
+data <- data.frame(data, CHANGE = cambio)
+data$CHANGE <- round(data$CHANGE, 2)
+head(data)
+### Graficar los cambios de la superficie del humedal.
+waterfall(values = data$CHANGE, labels = data$AÑO, 
+          rect_border = NA, calc_total = TRUE) +
+  labs(title = "Waterfall Chart of Wetland Area Change",
+       x = "Años", y = "Superficie (ha)") +
+  theme_grey() +
+  theme(plot.title = element_text(face = "bold", size = 14, 
+                                  hjust = 0.5)) +
+  scale_y_continuous(breaks = seq(0, 18, by = 4)) +
+  scale_x_discrete(
+    limits = c("2015", "2016", "2017", "2018", 
+               "2019", "2020", "2021", "2022",
+               "2023", "2024"),
+    labels = c("2015", "2016", "2017", "2018",
+               "2019", "2020", "2021", "2022",
+               "2023", "2024"))
+
+## Tasa de cambio anual.
+t1 <- (((data[[4,5]]/data[[1,5]])*100)-100)/(2018-2015)
+t2 <- (((data[[7,5]]/data[[4,5]])*100)-100)/(2021-2018)
+t3 <- (((data[[10,5]]/data[[7,5]])*100)-100)/(2024-2021)
+t4 <- (((data[[10,5]]/data[[1,5]])*100)-100)/(2024-2015)
+tasa <- c(t1, t2, t3, t4)
+años <- c("2015-2018", "2018-2021", "2021-2024", "2015-2024")
+data2 <- data.frame(PERIODO = años, TASA_PORCENTAJE = tasa)
+data2
+
+## Prueba de Normalidad
+### Graficar Q-Q Plot.
+ggplot(data.frame(data$AREA_HA), aes(sample = data$AREA_HA)) +
+  stat_qq_line(color = "#01ef63", lwd = 0.8) +
+  stat_qq(shape = 16, size = 2) +
+  theme_grey() +
+  theme(plot.title = element_text(face = "bold", size = 14, 
+                                  hjust = 0.5)) +
+  labs(title = "Normal Q-Q Plot of Wetland Area Change", 
+       x = "Cuantiles Teóricos", 
+       y = "Cuantiles Muestrales")
+
+### Graficar histograma.
+hist(data$AREA_HA, freq = FALSE, col="lightcyan",
+     main = "Histogram of Wetland Area Change",
+     xlab = "Superficie (ha)", ylab = "Densidad")
+lines(density(data$AREA_HA), col="red", lwd=2)
+curve(dnorm(x,mean=mean(data$AREA_HA), sd=sd(data$AREA_HA)), 
+      add=TRUE, col="blue", lwd=2)
+legend("topleft", col=c("blue","red"),
+       legend =c("Función densidad normal","Función densidad estimada"),
+       lwd = 1.5, bty = "n")
+## Análisis de tendencia Mann-Kendall.
+library(trend)
+mk.test(data$AREA_HA)
+
+## Análisis de correlación - temperatura.
+library(tidyverse)
+### Importar datos ".csv".
+tmax <- read.csv("datos/tmax.csv", header = TRUE)
+tmin <- read.csv("datos/tmin.csv", header = TRUE)
+temp <- cbind(tmax, tmin)
+temp <- temp[,-3]
+head(temp)
+### Procesamiento del conjunto de datos.
+temp <- temp %>%
+  separate(system.time_start, 
+           into = c("MES", "DIA", "AÑO"), sep = " ")
+temp$DIA <- gsub(",", "", temp$DIA)
+head(temp)
+temp$tmmx <- temp$tmmx * 0.1
+temp$tmmn <- temp$tmmn * 0.1
+head(temp)
+### Calcular temperatura media mensual.
+temp <- temp %>%
+  mutate(tmed = (tmmx + tmmn)/2)
+head(temp)
+### Calcular temperatura media anual.
+tmed <- temp %>%
+  group_by(AÑO) %>%
+  summarise(tmed = mean(tmed))
+head(tmed)
+### Generar "data.frame" con las variables de estudio.
+data_temp <- data.frame(Surface_Wetland = data$AREA_HA,
+                       Temperature_Mean = tmed$tmed)
+### Boxplot.
+ggplot(data_temp, aes(x = "", y = Temperature_Mean)) +
+  geom_boxplot(col = "black", fill = "white") +
+  geom_jitter(color = "red", size = 5, alpha = 0.5, pch = 16) +
+  labs(title = "Boxplot of Mean Temperature",
+       y = "Temperatura (°C)") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(17, 21, by = 0.5)) +
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+        legend.title = element_text(face = "bold", hjust = 0.5),
+        axis.title.y = element_blank())
+### Gráfico de dispersion.
+ggplot(data_temp, aes(x = Temperature_Mean, y= Surface_Wetland)) + 
+  geom_point() + 
+  ggtitle("Scatter Plot of Wetland Area Change & Mean Temperature") +
+  xlab("Temperatura (°C)") + ylab("Superficie (ha)") + 
+  geom_smooth() +
+  theme(plot.title = element_text(face = "bold", size = 14, 
+                                  hjust = 0.5))
+cor(data_temp$Temperature_Mean, data_temp$Surface_Wetland, method = "kendall")
+
+## Análisis de correlación - precipitación.
+### Importar datos ".csv".
+ppt <- read.csv("datos/ppt.csv")
+head(ppt)
+### Procesamiento del conjunto de datos.
+ppt <- ppt %>%
+  separate(system.time_start, 
+           into = c("MES", "DIA", "AÑO"), sep = " ")
+ppt$DIA <- gsub(",", "", ppt$DIA)
+head(ppt)
+### Calcular precipitacion anual acumulada.
+ppt <- ppt %>%
+  group_by(AÑO) %>%
+  summarise(ppt = sum(precipitation))
+head(ppt)
+### Generar "data.frame" con las variables de estudio.
+data_ppt <- data.frame(Surface_Wetland = data$AREA_HA,
+                        Precipitation = ppt$ppt)
+### Boxplot.
+ggplot(data_ppt, aes(x = "", y = Precipitation)) +
+  geom_boxplot(col = "black", fill = "white") +
+  geom_jitter(color = "blue", size = 5, alpha = 0.5, pch = 16) +
+  labs(title = "Boxplot of Accumulated Precipitation",
+       y = "Precipitación (mm)") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(21, 43, by = 2)) +
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+        legend.title = element_text(face = "bold", hjust = 0.5),
+        axis.title.y = element_blank())
+# Gráfico de dispersión.
+ggplot(data_ppt, aes(x = Precipitation, y= Surface_Wetland)) + 
+  geom_point() + 
+  ggtitle("Scatter Plot of Wetland Area Change & Accumulated Precipitation") +
+  xlab("Precipitación (mm)") + ylab("Superficie (ha)") + 
+  geom_smooth() +
+  theme(plot.title = element_text(face = "bold", size = 14, 
+                                  hjust = 0.5))
+cor(data_ppt$Precipitation, data_ppt$Surface_Wetland, method = "kendall")
+
+## Cobertura de suelo.
+### Importar datos "xslx".
+LULC <- read_excel("datos/LULC.xlsx")
+### Filtrar años de análisis.
+LULC_Filter1 <- LULC %>% 
+  filter(Año %in% c(2016, 2019, 2022))
+### Definir colores.
+colores1 <- c("Zona Pantanosa" = "#228B22",
+              "Mosaico Agropecuario" = "#F4E400",
+              "Area Urbana" = "#D7191C",
+              "Areas Sin Vegetacion" = "#D2B48C")
+### Graficar Bar Plot of Annual Percentage of Land Cover.
+ggplot(LULC_Filter1, aes(x = factor(Año), y = Area_porcentaje, fill = CLASES)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  scale_fill_manual(values = colores1) +
+  labs(title = "Bar Plot of Annual Percentage of Land Cover", x = "Años", 
+       y = "Porcentaje de Superficie (%)", fill = "Categorías") +
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+        legend.title = element_text(face = "bold", hjust = 0.5))
+### Filtrar coberturas de análisis.
+LULC_Filter2 <- LULC %>%
+  filter(CLASES != "Zona Pantanosa")
+### Definir colores.
+colores2 <- c("Mosaico Agropecuario" = "#F4E400",
+              "Area Urbana" = "#D7191C",
+              "Areas Sin Vegetacion" = "#D2B48C")
+### Graficar Line Chart of Annual Land Cover Area.
+ggplot(LULC_Filter2, aes(x = Año, y = Area_ha, color = CLASES)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_color_manual(values = colores2) +
+  scale_y_continuous(breaks = seq(50, 115, by = 8)) +
+  scale_x_continuous(breaks = seq(2015, 2022, by = 1)) +
+  labs(title = "Line Chart of Annual Land Cover Area", y = "Superficie (ha)", 
+       x = "Años", color = "Categorías") +
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+        legend.title = element_text(face = "bold", hjust = 0.5))
